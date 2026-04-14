@@ -56,11 +56,11 @@ on:
         required: false
         default: 'api://6563f833-21a5-4b8a-90ee-37a36cf8f667/.default'
     secrets:
-      AZURE_TENANT_ID:
+      CHANGE_WORKFLOW_AZURE_TENANT_ID:
         required: true
-      AZURE_CLIENT_ID:
+      CHANGE_WORKFLOW_AZURE_CLIENT_ID:
         required: true
-      AZURE_CLIENT_SECRET:
+      CHANGE_WORKFLOW_AZURE_CLIENT_SECRET:
         required: true
 
 permissions:
@@ -78,10 +78,10 @@ jobs:
         run: |
           set -e
           RESPONSE=$(curl -sfS -X POST \
-            "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
+            "https://login.microsoftonline.com/${{ secrets.CHANGE_WORKFLOW_AZURE_TENANT_ID }}/oauth2/v2.0/token" \
             -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "client_id=${{ secrets.AZURE_CLIENT_ID }}" \
-            -d "client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
+            -d "client_id=${{ secrets.CHANGE_WORKFLOW_AZURE_CLIENT_ID }}" \
+            -d "client_secret=${{ secrets.CHANGE_WORKFLOW_AZURE_CLIENT_SECRET }}" \
             -d "scope=${{ inputs.support-api-scope }}" \
             -d "grant_type=client_credentials")
 

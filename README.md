@@ -56,9 +56,9 @@ Set once at org level — calling repos need nothing:
 
 | Secret | Description |
 |--------|-------------|
-| `AZURE_TENANT_ID` | Azure AD tenant ID |
-| `AZURE_CLIENT_ID` | App registration client ID |
-| `AZURE_CLIENT_SECRET` | App registration client secret |
+| `CHANGE_WORKFLOW_AZURE_TENANT_ID` | Azure AD tenant ID |
+| `CHANGE_WORKFLOW_AZURE_CLIENT_ID` | App registration client ID |
+| `CHANGE_WORKFLOW_AZURE_CLIENT_SECRET` | App registration client secret |
 
 The app registration needs **application permissions** on the Support Platform API (`api://6563f833-21a5-4b8a-90ee-37a36cf8f667`): `Processes.Modify` and `Users.Read`, both with admin consent.
 
