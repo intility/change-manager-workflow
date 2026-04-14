@@ -164,7 +164,7 @@ jobs:
           BLOCK_JSON=$(printf '%s' "$BLOCK" | yq -o=json .)
 
           for field in title started_on ended_on impacts_all; do
-            VALUE=$(echo "$BLOCK_JSON" | jq -r --arg f "$field" '.[$f] // empty')
+            VALUE=$(echo "$BLOCK_JSON" | jq -r --arg f "$field" '.[$f] | if . == null then "" else tostring end')
             if [ -z "$VALUE" ]; then
               echo "::error::Missing required field in change-request block: $field"
               exit 1
