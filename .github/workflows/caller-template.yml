@@ -1,0 +1,23 @@
+# Copy this file into your gitops repo at .github/workflows/change-request.yml
+# No secrets or variables needed — they are managed centrally.
+
+name: Change Request
+
+on:
+  pull_request:
+    types: [opened, edited]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  create-change:
+    uses: intility/change-manager-workflow/.github/workflows/create-change.yml@main
+    secrets: inherit
+    with:
+      pr-body:   ${{ github.event.pull_request.body }}
+      pr-number: ${{ github.event.pull_request.number }}
+      pr-title:  ${{ github.event.pull_request.title }}
+      pr-url:    ${{ github.event.pull_request.html_url }}
+      pr-author: ${{ github.event.pull_request.user.login }}
+      repo:      ${{ github.repository }}

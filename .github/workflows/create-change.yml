@@ -1,0 +1,273 @@
+# Reusable workflow — Create Change from PR
+#
+# Called by gitops repos when a PR with a ```change-request block is opened or edited.
+# Secrets are inherited from the caller (set once at org level — see README).
+#
+# Usage in a calling repo:
+#   jobs:
+#     create-change:
+#       uses: intility/change-manager-workflow/.github/workflows/create-change.yml@main
+#       secrets: inherit
+#       with:
+#         pr-body:   ${{ github.event.pull_request.body }}
+#         pr-number: ${{ github.event.pull_request.number }}
+#         pr-title:  ${{ github.event.pull_request.title }}
+#         pr-url:    ${{ github.event.pull_request.html_url }}
+#         pr-author: ${{ github.event.pull_request.user.login }}
+#         repo:      ${{ github.repository }}
+
+name: Create Change from PR
+
+on:
+  workflow_call:
+    inputs:
+      pr-body:
+        description: Full PR description body
+        type: string
+        required: true
+      pr-number:
+        description: PR number
+        type: number
+        required: true
+      pr-title:
+        description: PR title
+        type: string
+        required: true
+      pr-url:
+        description: PR HTML URL
+        type: string
+        required: true
+      pr-author:
+        description: GitHub login of the PR author
+        type: string
+        required: true
+      repo:
+        description: Repository in owner/repo format
+        type: string
+        required: true
+      support-api-url:
+        description: Support Platform GraphQL endpoint
+        type: string
+        required: false
+        default: 'https://support-api.apps.aa.intility.com/graphql'
+      support-api-scope:
+        description: OAuth2 scope for the Support Platform API app registration
+        type: string
+        required: false
+        default: 'api://6563f833-21a5-4b8a-90ee-37a36cf8f667/.default'
+    secrets:
+      AZURE_TENANT_ID:
+        required: true
+      AZURE_CLIENT_ID:
+        required: true
+      AZURE_CLIENT_SECRET:
+        required: true
+
+permissions:
+  pull-requests: write
+
+jobs:
+  create-change:
+    name: create-change
+    runs-on: shared-runner-incloud-linux-x64-2
+    if: contains(inputs.pr-body, '```change-request')
+
+    steps:
+      - name: Get Azure access token
+        id: token
+        run: |
+          set -e
+          RESPONSE=$(curl -sfS -X POST \
+            "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "client_id=${{ secrets.AZURE_CLIENT_ID }}" \
+            -d "client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
+            -d "scope=${{ inputs.support-api-scope }}" \
+            -d "grant_type=client_credentials")
+
+          TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::error::Failed to get Azure access token"
+            exit 1
+          fi
+          echo "::add-mask::$TOKEN"
+          echo "access_token=$TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Resolve owner GUID
+        id: owner
+        env:
+          API_URL: ${{ inputs.support-api-url }}
+          API_TOKEN: ${{ steps.token.outputs.access_token }}
+          PR_BODY: ${{ inputs.pr-body }}
+          PR_AUTHOR: ${{ inputs.pr-author }}
+        run: |
+          set -e
+
+          BLOCK=$(printf '%s' "$PR_BODY" | awk '/```change-request/{found=1; next} /```/{if(found) exit} found{print}')
+          BLOCK_JSON=$(printf '%s' "$BLOCK" | yq -o=json .)
+
+          OWNER_GUID=$(echo "$BLOCK_JSON" | jq -r '.owner_guid // empty')
+          OWNER_UPN=$(echo  "$BLOCK_JSON" | jq -r '.owner_upn  // empty')
+
+          if [ -n "$OWNER_GUID" ]; then
+            echo "Using explicit owner_guid: $OWNER_GUID"
+            echo "guid=$OWNER_GUID" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ -n "$OWNER_UPN" ]; then
+            FILTER_FIELD="userPrincipalName"
+            FILTER_VALUE="$OWNER_UPN"
+            echo "Looking up owner by UPN: $OWNER_UPN"
+          else
+            FILTER_FIELD="username"
+            FILTER_VALUE="$PR_AUTHOR"
+            echo "No owner specified — falling back to PR author: $PR_AUTHOR"
+          fi
+
+          QUERY=$(jq -n \
+            --arg field "$FILTER_FIELD" \
+            --arg value "$FILTER_VALUE" \
+            '{
+              query: "query GetUser($where: UserFilterInput) { users(where: $where) { items { guid } } }",
+              variables: { where: { ($field): { eq: $value } } }
+            }')
+
+          RESPONSE=$(curl -sfS -X POST "$API_URL" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -d "$QUERY")
+
+          GUID=$(echo "$RESPONSE" | jq -r '.data.users.items[0].guid // empty')
+
+          if [ -z "$GUID" ]; then
+            echo "::error::Could not find a Support Platform user matching $FILTER_FIELD=\"$FILTER_VALUE\""
+            echo "::error::Set owner_upn or owner_guid explicitly in the change-request block."
+            exit 1
+          fi
+
+          echo "Resolved owner GUID: $GUID"
+          echo "guid=$GUID" >> $GITHUB_OUTPUT
+
+      - name: Parse change-request block
+        id: parse
+        env:
+          PR_BODY: ${{ inputs.pr-body }}
+          OWNER_GUID: ${{ steps.owner.outputs.guid }}
+        run: |
+          set -e
+
+          BLOCK=$(printf '%s' "$PR_BODY" | awk '/```change-request/{found=1; next} /```/{if(found) exit} found{print}')
+          BLOCK_JSON=$(printf '%s' "$BLOCK" | yq -o=json .)
+
+          for field in title started_on ended_on impacts_all; do
+            VALUE=$(echo "$BLOCK_JSON" | jq -r --arg f "$field" '.[$f] // empty')
+            if [ -z "$VALUE" ]; then
+              echo "::error::Missing required field in change-request block: $field"
+              exit 1
+            fi
+          done
+
+          INPUT=$(echo "$BLOCK_JSON" | jq \
+            --arg owner_guid "$OWNER_GUID" \
+            --arg pr_url "${{ inputs.pr-url }}" \
+            --arg pr_title "GitHub PR #${{ inputs.pr-number }}: ${{ inputs.pr-title }}" \
+            '{
+              ownerGuid:  $owner_guid,
+              title:      .title,
+              startedOn:  .started_on,
+              endedOn:    .ended_on,
+              impactsAll: .impacts_all,
+              isInternal: (.is_internal // true)
+            }
+            + if .description then { description: .description } else {} end
+            + if .tickets.reference_numbers then { tickets: [{ referenceNumbers: .tickets.reference_numbers }] } else {} end
+            + if (.assets | length) > 0 then { assets: [{ assetType: { name: "Product" }, values: .assets }] } else {} end
+            + { hyperlinks: ((.hyperlinks // [] | map({ name: .name, url: .url })) + [{ name: $pr_title, url: $pr_url }]) }
+          ')
+
+          {
+            echo 'gql_input<<EOF'
+            echo "$INPUT"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Create change in Support Platform
+        id: create
+        env:
+          API_URL: ${{ inputs.support-api-url }}
+          API_TOKEN: ${{ steps.token.outputs.access_token }}
+          GQL_INPUT: ${{ steps.parse.outputs.gql_input }}
+        run: |
+          set -e
+
+          PAYLOAD=$(jq -n \
+            --argjson input "$GQL_INPUT" \
+            '{
+              query: "mutation CreateChange($input: CreateChangeInput!) { createChange(input: $input) { id title startedOn endedOn } }",
+              variables: { input: $input }
+            }')
+
+          RESPONSE=$(curl -sfS -X POST "$API_URL" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -d "$PAYLOAD")
+
+          if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
+            echo "::error::GraphQL errors: $(echo "$RESPONSE" | jq -r '.errors[].message')"
+            exit 1
+          fi
+
+          CHANGE_ID=$(echo    "$RESPONSE" | jq -r '.data.createChange.id')
+          CHANGE_TITLE=$(echo "$RESPONSE" | jq -r '.data.createChange.title')
+          STARTED_ON=$(echo   "$RESPONSE" | jq -r '.data.createChange.startedOn')
+          ENDED_ON=$(echo     "$RESPONSE" | jq -r '.data.createChange.endedOn')
+
+          if [ -z "$CHANGE_ID" ] || [ "$CHANGE_ID" = "null" ]; then
+            echo "::error::Unexpected API response — createChange missing from result"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "Change created: id=$CHANGE_ID title=$CHANGE_TITLE"
+          echo "change_id=$CHANGE_ID"       >> $GITHUB_OUTPUT
+          echo "change_title=$CHANGE_TITLE" >> $GITHUB_OUTPUT
+          echo "started_on=$STARTED_ON"     >> $GITHUB_OUTPUT
+          echo "ended_on=$ENDED_ON"         >> $GITHUB_OUTPUT
+
+      - name: Comment on PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGE_ID: ${{ steps.create.outputs.change_id }}
+          CHANGE_TITLE: ${{ steps.create.outputs.change_title }}
+          STARTED_ON: ${{ steps.create.outputs.started_on }}
+          ENDED_ON: ${{ steps.create.outputs.ended_on }}
+          PR_NUMBER: ${{ inputs.pr-number }}
+          REPO: ${{ inputs.repo }}
+        run: |
+          MARKER="<!-- change-manager-bot -->"
+
+          BODY=$(cat <<EOF
+          $MARKER
+          ✅ **Change created in Support Platform**
+
+          | Field | Value |
+          |-------|-------|
+          | **ID** | \`$CHANGE_ID\` |
+          | **Title** | $CHANGE_TITLE |
+          | **Starts** | $STARTED_ON |
+          | **Ends** | $ENDED_ON |
+
+          > 🤖 This change was automatically created from the \`change-request\` block in this PR description.
+          EOF
+          )
+
+          EXISTING_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq '.[] | select(.body | contains("<!-- change-manager-bot -->")) | .id' \
+            | head -1)
+
+          if [ -n "$EXISTING_ID" ]; then
+            gh api "repos/$REPO/issues/comments/$EXISTING_ID" -X PATCH -f body="$BODY"
+          else
+            gh api "repos/$REPO/issues/$PR_NUMBER/comments" -X POST -f body="$BODY"
+          fi
