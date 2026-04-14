@@ -1,6 +1,6 @@
 # change-manager-workflow
 
-Reusable GitHub Actions workflow that creates a [Support Platform](https://support-api.apps.aa.intility.com/graphql) change when a PR contains a `change-request` block.
+Reusable GitHub Actions workflow that creates a [Support Platform](https://internal-operations.intility.com/process-manager/Changes) change when a PR contains a `change-request` block.
 
 ## Usage
 
@@ -38,6 +38,7 @@ impacts_all: false
 
 # Optional
 # description: "..."
+# is_internal: true
 # assets:
 #   - "14ea6945-a8ec-4cd9-8ae8-a3d8c0778a2c"  # Intility Developer Platform
 # tickets:
@@ -48,7 +49,7 @@ impacts_all: false
 ```
 ~~~
 
-On PR open or edit the workflow creates the change and posts a comment with the change ID.
+On PR open or edit the workflow creates the change and posts a comment with the change ID and a direct link to it in Support Platform.
 
 ## Secrets
 
