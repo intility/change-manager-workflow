@@ -60,7 +60,9 @@ Set once at org level — calling repos need nothing:
 | `CHANGE_WORKFLOW_AZURE_CLIENT_ID` | App registration client ID |
 | `CHANGE_WORKFLOW_AZURE_CLIENT_SECRET` | App registration client secret |
 
-The app registration needs **application permissions** on the Support Platform API (`api://6563f833-21a5-4b8a-90ee-37a36cf8f667`): `Processes.Modify` and `Users.Read`, both with admin consent.
+The app registration needs:
+- **Support Platform API** (`api://6563f833-21a5-4b8a-90ee-37a36cf8f667`): `Processes.Modify` — Application permission, admin consent required
+- **Microsoft Graph**: `User.Read.All` — Application permission, admin consent required (used to resolve UPN → GUID)
 
 ## Optional inputs
 
