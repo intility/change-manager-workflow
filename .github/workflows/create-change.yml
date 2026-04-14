@@ -133,16 +133,22 @@ jobs:
               variables: { where: { ($field): { eq: $value } } }
             }')
 
-          RESPONSE=$(curl -sfS -X POST "$API_URL" \
+          RESPONSE=$(curl -sS -X POST "$API_URL" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $API_TOKEN" \
             -d "$QUERY")
+
+          if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
+            echo "::error::GraphQL errors looking up user: $(echo "$RESPONSE" | jq -r '.errors[].message')"
+            exit 1
+          fi
 
           GUID=$(echo "$RESPONSE" | jq -r '.data.users.items[0].guid // empty')
 
           if [ -z "$GUID" ]; then
             echo "::error::Could not find a Support Platform user matching $FILTER_FIELD=\"$FILTER_VALUE\""
             echo "::error::Set owner_upn or owner_guid explicitly in the change-request block."
+            echo "API response: $RESPONSE"
             exit 1
           fi
 
