@@ -75,14 +75,19 @@ jobs:
     steps:
       - name: Get Azure access token
         id: token
+        env:
+          TENANT_ID: ${{ secrets.CHANGE_WORKFLOW_AZURE_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.CHANGE_WORKFLOW_AZURE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CHANGE_WORKFLOW_AZURE_CLIENT_SECRET }}
+          SCOPE: ${{ inputs.support-api-scope }}
         run: |
           set -e
           RESPONSE=$(curl -sfS -X POST \
-            "https://login.microsoftonline.com/${{ secrets.CHANGE_WORKFLOW_AZURE_TENANT_ID }}/oauth2/v2.0/token" \
+            "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token" \
             -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "client_id=${{ secrets.CHANGE_WORKFLOW_AZURE_CLIENT_ID }}" \
-            -d "client_secret=${{ secrets.CHANGE_WORKFLOW_AZURE_CLIENT_SECRET }}" \
-            -d "scope=${{ inputs.support-api-scope }}" \
+            -d "client_id=${CLIENT_ID}" \
+            -d "client_secret=${CLIENT_SECRET}" \
+            -d "scope=${SCOPE}" \
             -d "grant_type=client_credentials")
 
           TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
@@ -157,6 +162,9 @@ jobs:
         env:
           PR_BODY: ${{ inputs.pr-body }}
           OWNER_GUID: ${{ steps.owner.outputs.guid }}
+          PR_URL: ${{ inputs.pr-url }}
+          PR_TITLE: ${{ inputs.pr-title }}
+          PR_NUMBER: ${{ inputs.pr-number }}
         run: |
           set -e
 
@@ -173,8 +181,8 @@ jobs:
 
           INPUT=$(echo "$BLOCK_JSON" | jq \
             --arg owner_guid "$OWNER_GUID" \
-            --arg pr_url "${{ inputs.pr-url }}" \
-            --arg pr_title "GitHub PR #${{ inputs.pr-number }}: ${{ inputs.pr-title }}" \
+            --arg pr_url "$PR_URL" \
+            --arg pr_title "GitHub PR #${PR_NUMBER}: ${PR_TITLE}" \
             '{
               ownerGuid:  $owner_guid,
               title:      .title,
