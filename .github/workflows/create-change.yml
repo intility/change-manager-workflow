@@ -250,13 +250,15 @@ jobs:
         run: |
           MARKER="<!-- change-manager-bot -->"
 
+          CHANGE_URL="https://internal-operations.intility.com/process-manager/Changes/$CHANGE_ID"
+
           BODY=$(cat <<EOF
           $MARKER
-          ✅ **Change created in Support Platform**
+          ✅ **Change created in Support Platform** — [View change →]($CHANGE_URL)
 
           | Field | Value |
           |-------|-------|
-          | **ID** | \`$CHANGE_ID\` |
+          | **ID** | [$CHANGE_ID]($CHANGE_URL) |
           | **Title** | $CHANGE_TITLE |
           | **Starts** | $STARTED_ON |
           | **Ends** | $ENDED_ON |
