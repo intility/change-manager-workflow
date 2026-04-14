@@ -62,7 +62,7 @@ Set once at org level — calling repos need nothing:
 
 The app registration needs:
 - **Support Platform API** (`api://6563f833-21a5-4b8a-90ee-37a36cf8f667`): `Processes.Modify` — Application permission, admin consent required
-- **Microsoft Graph**: `User.Read.All` — Application permission, admin consent required (used to resolve UPN → GUID)
+- The service identity must be registered in the Support Platform database (used to resolve UPN → GUID via the `users` query)
 
 ## Optional inputs
 
